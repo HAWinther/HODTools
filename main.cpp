@@ -40,7 +40,6 @@ BinnedCorrelationFunction *bcf_fiducial;
 //===========================================================
 double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
  
-#define TESTING
 #ifdef TESTING
   //===============================================
   // For testing that the simplex/mcmc search works
