@@ -106,12 +106,8 @@ int main(int argc, char** argv){
   // Set up HOD model (standard constructor is fiducial parameters)
   HodModel hod_fiducial;
 
-  // Compute maximum number-density
-  double ndens_max = ExpectedNumberDensity(halos_fiducial, hod_fiducial, box_global);
-  
-  // Compute number density
-  std::cout << "Expected number density in fiducial model: "
-    << ExpectedNumberDensity(halos_fiducial, hod_fiducial, box_global) << " ( max: " << ndens_max << ")" << std::endl;
+  // Compute number density of tracers in fiducial model
+  std::cout << "Expected number density in fiducial model: " << ExpectedNumberDensity(halos_fiducial, hod_fiducial, box_global) << std::endl;
 
   // Compute mock using fiducial parameters
   generator.seed(STANDARD_SEED);
