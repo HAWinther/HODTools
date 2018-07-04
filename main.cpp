@@ -25,10 +25,10 @@ const int    nbins_global = 20;
 
 // Parameters for simplex-search or mcmc search
 double chi2_convergence_criterion = 0.01;
-int nstep_max = 5000;
+int nstep_max = 1000;
 
 // Global variables: boxsize of simulations, the halo-catalog and zeta(r) for fiducial model
-double box_global;
+double box_global, box_fiducial;
 std::vector<Halo> halos_global;
 BinnedCorrelationFunction *bcf_fiducial;
 //===========================================================
@@ -38,11 +38,13 @@ BinnedCorrelationFunction *bcf_fiducial;
 // Evaluate this relative to the reference and return the
 // chi-squared value. This is used in simplex or MCMC search
 //===========================================================
+int jalla = 0;
 double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
  
 #ifdef TESTING
   //===============================================
   // For testing that the simplex/mcmc search works
+  // Best-fit is: (0.1, 0.2, 0.3, ...)
   //===============================================
   double chi2test = 0.0;
   for(int i = 0; i < param.size(); i++){
@@ -88,17 +90,73 @@ double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
 }
 
 int main(int argc, char** argv){
+
 #ifdef USE_MPI
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 #endif
-  
-  // The boxsize
-  box_global = 1024.0;
-  
-  // Read in fiducial halo-catalog
+
+  // The fiducial halo-catalog
   std::string filename_halo_fiducial = "halo_cat.dat";
+  box_fiducial = 1024.0;
+
+  // The halo-catalog we are to match the HOD to
+  std::string filename_halo          = "halo_cat.dat";
+  box_global = 1024.0;
+
+  // The outputname
+  std::string filename_output_fiducial = "mock_fiducial.txt";
+  std::string filename_output          = "mock.txt";
+
+  int do_matching = 0;
+
+  if(argc < 8){
+    std::cout << "\n====================================================\n";
+    std::cout << "Run as ./HODMatch param[]\n";
+    std::cout << "====================================================\n";
+    std::cout << "Param [1]: filename_halocat_fiducial\n";
+    std::cout << "Param [2]: boxsize_fiducial (Mpc/h)\n";
+    std::cout << "Param [3]: filename_halocat\n";
+    std::cout << "Param [4]: boxsize (Mpc/h)\n";
+    std::cout << "Param [5]: filename_mock_output_fiducial\n";
+    std::cout << "Param [6]: filename_mock_output\n";
+    std::cout << "Param [7]: do_matching (0,1,2)\n";
+    std::cout << "If do_matching = 0 we compute the HOD for the fiducial halo-catalog (the other input is ignored) and output it\n";
+    std::cout << "If do_matching = 1 we try to do the matching using simplex search. If do_matching = 2 we do a MCMC search\n";
+    std::cout << "NB: one probably *has* to edit main.cpp to set the initial guess/step-size for the parameters to get it to converge\n";
+    std::cout << "====================================================\n\n";
+    exit(1);
+  } else {
+    filename_halo_fiducial   = std::string(argv[1]);
+    box_fiducial             = atof(argv[2]);
+    filename_halo            = std::string(argv[3]);
+    box_global               = atof(argv[4]);
+    filename_output_fiducial = std::string(argv[5]);
+    filename_output          = std::string(argv[6]);
+    do_matching              = atoi(argv[7]);
+
+    std::cout << "\n====================================================\n";
+    std::cout << "HODMatching Parameters:                               \n";
+    std::cout << "====================================================\n";
+    if(do_matching == 0){
+      std::cout << "Filename Fiducial HaloCat: [ " << filename_halo_fiducial   << " ]\n";
+      std::cout << "Boxsize Fiducial         : [ " << box_fiducial             << " ] Mpc/h\n";
+      std::cout << "Filename Output          : [ " << filename_output_fiducial << " ]\n";
+    } else {
+      std::cout << "Filename Fiducial HaloCat: [ " << filename_halo_fiducial   << " ]\n";
+      std::cout << "Filename HaloCat         : [ " << filename_halo            << " ]\n";
+      std::cout << "Boxsize Fiducial         : [ " << box_fiducial             << " ] Mpc/h\n";
+      std::cout << "Boxsize                  : [ " << box_global               << " ] Mpc/h\n";
+      std::cout << "Filename Fiducial Output : [ " << filename_output_fiducial << " ]\n";
+      std::cout << "Filename Output          : [ " << filename_output          << " ]\n";
+      if(do_matching == 1) std::cout << "Will match using simplex search\n\n";
+      else std::cout << "Will match using mcmc search\n\n";
+    }
+    std::cout << "\n";
+  }
+
+  // Read in fiducial halo-catalog
   std::vector<Halo> halos_fiducial;
   readRockstarHalos(filename_halo_fiducial, halos_fiducial);
 
@@ -106,7 +164,7 @@ int main(int argc, char** argv){
   HodModel hod_fiducial;
 
   // Compute number density of tracers in fiducial model
-  std::cout << "Expected number density in fiducial model: " << ExpectedNumberDensity(halos_fiducial, hod_fiducial, box_global) << std::endl;
+  std::cout << "Expected number density in fiducial model: " << ExpectedNumberDensity(halos_fiducial, hod_fiducial, box_fiducial) << " (h/Mpc)^3\n";
 
   // Compute mock using fiducial parameters
   generator.seed(STANDARD_SEED);
@@ -114,21 +172,48 @@ int main(int argc, char** argv){
   generator2.seed(STANDARD_SEED);
 #endif
   std::vector<Galaxy> mock_fiducial;
-  generateMock(halos_fiducial, mock_fiducial, hod_fiducial, box_global);
-  
-  // Compute correlation function for the fiducial mock
-  bcf_fiducial = CUTER_correlation_function_periodic_from_galaxies(&mock_fiducial[0], mock_fiducial.size(), nbins_global, rmax_global, box_global);
+  generateMock(halos_fiducial, mock_fiducial, hod_fiducial, box_fiducial);
+
+  // Output fiducial mock
+  output_mock(filename_output_fiducial, mock_fiducial); 
+  if(do_matching == 0) return 1;
+
+  // Compute correlation function for the fiducial mock needed for th matching
+  bcf_fiducial = CUTER_correlation_function_periodic_from_galaxies(&mock_fiducial[0], mock_fiducial.size(), nbins_global, rmax_global, box_fiducial);
 
   // Read in halo-catalog for which we are to match to the fiducial one
-  std::string filename_halo = "halo_cat.dat";
   readRockstarHalos(filename_halo, halos_global);
 
-  // Perform simplex-search
-  std::vector<double> start(hod_fiducial.get_num_hod_param(), 0.0); // Initial guess
-  std::vector<double> dx   (hod_fiducial.get_num_hod_param(), 0.1); // Step-size
-  Evaluation_function eval_func = create_mock_compute_2pcf_return_chi2;
-  simplex_search(start, dx, eval_func, chi2_convergence_criterion, nstep_max);
-  //mcmc_search(start, dx, eval_func, chi2_convergence_criterion, nstep_max);
+  // Do matching
+  std::vector<double> param, step_size;
+  if(do_matching == 1){
+    // Perform simplex-search
+    Evaluation_function eval_func = create_mock_compute_2pcf_return_chi2;
+    param     = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.01); // Initial guess
+    step_size = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.01); // Step-size
+    simplex_search(param, step_size, eval_func, chi2_convergence_criterion, nstep_max);
+  } else {
+    // Perform mcmc-search
+    Evaluation_function eval_func = create_mock_compute_2pcf_return_chi2;
+    param     = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.01);   // Initial guess
+    step_size = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.0001); // Step-size
+    mcmc_search(param, step_size, eval_func, chi2_convergence_criterion, nstep_max);
+  }
+
+  // Convert simplex/mcmc params to true parameters
+  HodModel hod;
+  hod.simplex_param_conversion(param);
+ 
+  // Generate mock
+  std::vector<Galaxy> mock;
+  generator.seed(STANDARD_SEED);
+#ifdef VELOCITY
+  generator2.seed(STANDARD_SEED);
+#endif
+  generateMock(halos_global, mock, hod, box_global);
+
+  // Output mock
+  output_mock(filename_output, mock); 
 
 #ifdef USE_MPI
   MPI_Finalize();

@@ -1,5 +1,8 @@
 #include "random_methods.h"
 
+std::default_random_engine generator(STANDARD_SEED);
+std::default_random_engine generator2(STANDARD_SEED);
+
 std::vector<double> generateUniformVector(int n){
   std::vector<double> v(n);
   std::uniform_real_distribution<double> distribution(0.0, 1.0);
@@ -35,7 +38,7 @@ int generatePoisson(double lambda){
 }
 
 double generateUniform(){
-  static std::uniform_real_distribution<double> distribution(0.0, 1.0);
+  std::uniform_real_distribution<double> distribution(0.0, 1.0);
   return distribution(generator);
 }
 

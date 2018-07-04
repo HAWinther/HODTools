@@ -5,8 +5,8 @@
 
 #define STANDARD_SEED  12345
 
-static std::default_random_engine generator(STANDARD_SEED);
-static std::default_random_engine generator2(STANDARD_SEED);
+extern std::default_random_engine generator;
+extern std::default_random_engine generator2;
 
 std::vector<double> generateUniformVector(int n);
 std::vector<double> generateNormalVector(int n, double mu, double sigma);

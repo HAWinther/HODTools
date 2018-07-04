@@ -175,6 +175,11 @@ void generateMock_from_halofile(std::string filename_rockstar_halos, std::string
 // Output a mock
 //===========================================================
 void output_mock(std::string filename, std::vector<Galaxy> &mock){
+  std::cout << "\n====================================================\n";
+  std::cout << "Output mock: \n";
+  std::cout << "====================================================\n";
+  std::cout << "Filename [ " << filename << " ]\n";
+
   std::ofstream fp(filename.c_str());
   for(auto g: mock){
     fp << g.x[0] << " " << g.x[1] << " " << g.x[2] << " ";

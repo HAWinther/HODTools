@@ -14,7 +14,9 @@ void simplex_search(std::vector<double> &start, std::vector<double> dx, Evaluati
   std::vector<double> chi2(npar+1);
   std::vector<double> x_r(npar), x_c(npar), x_e(npar), centroid(npar);
 
-  std::cout << "Starting simplex search...\n";
+  std::cout << "\n====================================================\n";
+  std::cout << "Starting simplex search: \n";
+  std::cout << "====================================================\n";
   
   for(int i = 0; i < npar; i++){
     for(int j = 0; j < npar; j++){
@@ -37,6 +39,7 @@ void simplex_search(std::vector<double> &start, std::vector<double> dx, Evaluati
     for(int j = 0; j < npar; j++) param_0[j] = simplex[j][i];
     chi2[i] = eval_func(param_0);
   }
+  std::cout << "0.0 Param: ["; for(int j = 0; j < npar; j++) { std::cout << " " << std::setw(12) << simplex[j][0];} std::cout << "] Chi2: " << std::setw(12) << chi2[0] << "\n";
 
   int icount = 1;
   while(icount < istep_max){
@@ -172,9 +175,15 @@ void mcmc_search(std::vector<double> &start, std::vector<double> &step_size, Eva
   
     if(chi2 < chi2_converge_limit) break;
   }
-  std::cout << "We finished the search after nstep = " << nstep << " MinChi2: " << chi2 << "\n";
+  std::cout << "We finished the search after nstep = " << nstep << " MinChi2: " << chi2 << "\nParam:    [";
   for(int j = 0; j < nparam; j++) std::cout << std::setw(12) << min_param[j] << " ";
-  std::cout << "\n";
+  std::cout << "]\n";
+
+#ifdef TESTING
+  std::cout << "Expected: [";
+  for(int j = 0; j < nparam; j++) std::cout << std::setw(12) << 0.1*(j+1) << " ";
+  std::cout << "]\n";
+#endif
 
   // Copy over the parameters
   start = min_param;

@@ -50,12 +50,12 @@ class HodModel{
     // This method converts the parameters we fit for in the simplex search to
     // the true parameters
     void simplex_param_conversion(std::vector<double> &param){
-      double logMmin   = logMmin_fiducial + param[0];
-      double M1        = pow(10.0, log10(M1_fiducial) + param[1]);
-      double M0        = pow(10.0, log10(M0_fiducial) + param[2]);
-      double sigma     = sigma_fiducial + param[3];
-      double alpha     = alpha_fiducial + param[4];
-      double Mhalo_min = Mhalo_min_fiducial;
+      logMmin   = logMmin_fiducial + param[0];
+      M1        = pow(10.0, log10(M1_fiducial) + param[1]);
+      M0        = pow(10.0, log10(M0_fiducial) + param[2]);
+      sigma     = sigma_fiducial + param[3];
+      alpha     = alpha_fiducial + param[4];
+      Mhalo_min = Mhalo_min_fiducial;
       if(num_hod_param == 6) Mhalo_min += param[5];
     }
 
