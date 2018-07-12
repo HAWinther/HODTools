@@ -2,8 +2,39 @@
 
 int mpi_rank = 0;
 int mpi_size = 1;
-int cute_library_verbose  = 0;
+int cuter_library_verbose = 0;
+int cuter_library_logbin  = 0;
 GSL_Spline *global_spline_rofz;
+
+//====================================================
+// The position of the bins 
+// (Left edge of bin i  : ibin = i      )
+// (Center of bin i     : ibin = i + 0.5)
+// (Right edge of bin i : ibin = i + 1.0)
+//====================================================
+double r_binning(double ibin, int nbins, double rmin, double rmax){
+  double r;
+  if(cuter_library_logbin){
+    // Log-bins
+    r = exp( log(rmin) + log(rmax/rmin) / (double) nbins * (ibin) );
+  } else {
+    // Linear binning
+    r = rmin + (rmax - rmin)/(double)(nbins) * (ibin);
+  }
+  return r;
+}
+
+void CUTER_set_bintype_log(){
+  cuter_library_logbin = 1;
+}
+
+void CUTER_set_bintype_lin(){
+  cuter_library_logbin = 0;
+}
+
+void CUTER_set_verbose(int verbose){
+  cuter_library_verbose = verbose;
+}
 
 //====================================================
 // Spline of r(z) = Int_0^z dz/H(z)
@@ -22,12 +53,14 @@ void brute_force_pair_counting(GalaxyCatalog *cat, PairCountBinning *pc, double 
   
   // Fetch data from binning
   int nbins   = pc->nbins;
+  double rmin = pc->rmin;
   double rmax = pc->rmax;
   double *XX  = pc->paircount;
  
   // Other variables
   double pairs_dist = 0.0, pairs_dist2 = 0.0;
-  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax;
+  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax, rmin2 = rmin * rmin;
+  double nbins_over_logrmaxrmin = nbins / log(rmax/rmin);
   int i;
   
   // Initialize OpenMP
@@ -51,7 +84,7 @@ void brute_force_pair_counting(GalaxyCatalog *cat, PairCountBinning *pc, double 
     }
   }
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Brute-force pair counting:\n");
     printf("====================================\n");
@@ -93,11 +126,16 @@ void brute_force_pair_counting(GalaxyCatalog *cat, PairCountBinning *pc, double 
       double dist2 = pow2(dx)+pow2(dy)+pow2(dz);
 
       // Add to bin
-      if(dist2 < rmax2){
+      if(dist2 < rmax2 && dist2 > rmin2){
         double dist = sqrt(dist2);
 
         // The index in the binning
-        int ibin = (int) (dist * nbins_over_rmax);
+        int ibin;
+        if(cuter_library_logbin){
+          ibin = (int) (log(dist/rmin) * nbins_over_logrmaxrmin);
+        } else {
+          ibin = (int) ((dist - rmin) * nbins_over_rmax);
+        }
 
 #ifdef WEIGHTS
         XX_threads[id][ibin] += p1->w * p2->w;
@@ -137,7 +175,7 @@ void brute_force_pair_counting(GalaxyCatalog *cat, PairCountBinning *pc, double 
 
   // Show timing and how many dist^2 and square roots we had to compute
   diff = clock() - start;
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("We have computed dist^2 for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist2, 
         (double)ngalaxies * (double)ngalaxies/2.0, pairs_dist2/((double)ngalaxies*(double) ngalaxies/2.0) * 100.0);
     printf("We have computed sqrt(dist^2) for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist, 
@@ -160,12 +198,14 @@ void brute_force_cross_pair_counting(GalaxyCatalog *cat, GalaxyCatalog *cat2, Pa
 
   // Fetch data from binning
   int nbins   = pc->nbins;
+  double rmin = pc->rmin;
   double rmax = pc->rmax;
   double *XY  = pc->paircount;
 
   // Other variables
   double pairs_dist = 0.0, pairs_dist2 = 0.0;
-  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax;
+  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax, rmin2 = rmin * rmin;
+  double nbins_over_logrmaxrmin = nbins / log(rmax/rmin);
   int i;
 
   // Initialize OpenMP
@@ -189,7 +229,7 @@ void brute_force_cross_pair_counting(GalaxyCatalog *cat, GalaxyCatalog *cat2, Pa
     }
   }
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Brute-force cross pair counting:\n");
     printf("====================================\n");
@@ -231,11 +271,16 @@ void brute_force_cross_pair_counting(GalaxyCatalog *cat, GalaxyCatalog *cat2, Pa
       double dist2 = pow2(dx)+pow2(dy)+pow2(dz);
 
       // Add to bin
-      if(dist2 < rmax2){
+      if(dist2 < rmax2 && dist2 > rmin2){
         double dist = sqrt(dist2);
 
         // The index in the binning
-        int ibin = (int) (dist * nbins_over_rmax);
+        int ibin;
+        if(cuter_library_logbin){
+          ibin = (int) (log(dist/rmin) * nbins_over_logrmaxrmin);
+        } else {
+          ibin = (int) ((dist-rmin) * nbins_over_rmax);
+        }
 
 #ifdef WEIGHTS
         XY_threads[id][ibin] += p1->w * p2->w;
@@ -272,7 +317,7 @@ void brute_force_cross_pair_counting(GalaxyCatalog *cat, GalaxyCatalog *cat2, Pa
 
   // Show timing and how many dist^2 and square roots we had to compute
   diff = clock() - start;
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("We have computed dist^2 for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist2, 
         (double)ngalaxies * (double)ngalaxies2, pairs_dist2/((double)ngalaxies*(double) ngalaxies2) * 100.0);
     printf("We have computed sqrt(dist^2) for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist, 
@@ -296,12 +341,14 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
 
   // Fetch data from binning
   int nbins   = pc->nbins;
+  double rmin = pc->rmin;
   double rmax = pc->rmax;
   double *XX  = pc->paircount;
 
   // Other variables
   double pairs_dist2 = 0.0, pairs_dist = 0.0;
-  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax;
+  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax, rmin2 = rmin * rmin;
+  double nbins_over_logrmaxrmin = nbins / log(rmax/rmin);
   int i;
 
   // Initialize OpenMP
@@ -325,7 +372,7 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
     }
   }
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Pair counting using grid:\n");
     printf("====================================\n");
@@ -334,7 +381,7 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
 
   // How many cells in each direction we must search
   int delta_ncells = (int)(ceil(rmax / cell_size)) + 1;
-  if(mpi_rank == 0 && cute_library_verbose)
+  if(mpi_rank == 0 && cuter_library_verbose)
     printf("We will go left and right: [%i] cells. The corresponding distance: +/-[%lf] Mpc/h\n", 
         delta_ncells,  delta_ncells * cell_size);
 
@@ -475,11 +522,16 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
                   double dist2 = pow2(dx)+pow2(dy)+pow2(dz);
 
                   // Add to bin
-                  if(dist2 < rmax2 && dist2 > 0.0){
+                  if(dist2 < rmax2 && dist2 > rmin2 && dist2 > 0.0){
                     double dist = sqrt(dist2);
 
                     // The index in the binning
-                    int ibin = (int) (dist * nbins_over_rmax);
+                    int ibin;
+                    if(cuter_library_logbin){
+                      ibin = (int) (log(dist/rmin) * nbins_over_logrmaxrmin);
+                    } else {
+                      ibin = (int) ((dist-rmin) * nbins_over_rmax);
+                    }
 
 #ifdef WEIGHTS
                     XX_threads[id][ibin] += curpart_cell->w * curpart_neighbor_cell->w;
@@ -505,7 +557,7 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
 #if defined(USE_OMP)
 #pragma omp critical
     {
-      if(cute_library_verbose) printf("Processed (%4i / %4i)   (ThreadID: %3i)\n", num_processed, max_ix, id);
+      if(cuter_library_verbose) printf("Processed (%4i / %4i)   (ThreadID: %3i)\n", num_processed, max_ix, id);
       num_processed++;
     }
 #endif
@@ -532,7 +584,7 @@ void grid_pair_counting(Grid *grid, PairCountBinning *pc, double box){
 
   // Show timing and how many dist^2 and square roots we had to compute
   diff = clock() - start;
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("We have computed dist^2 for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist2, 
         (double)ngalaxies * (double)ngalaxies/2.0, pairs_dist2/((double)ngalaxies*(double) ngalaxies/2.0) * 100.0);
     printf("We have computed sqrt(dist^2) for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist, 
@@ -548,7 +600,7 @@ GalaxyCatalog *read_galaxies_from_file(char *filename, int ngalaxies, int file_f
   if(ngalaxies == 0) return NULL;
   int i;
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n"); 
     printf("Reading from file [%s]\n", filename); 
     printf("====================================\n"); 
@@ -566,6 +618,11 @@ GalaxyCatalog *read_galaxies_from_file(char *filename, int ngalaxies, int file_f
 
   // Read the data
   FILE *fp = fopen(filename, "r");
+  if(fp == NULL){
+    printf("Error in read_galaxies_from_file. File [ %s ] does not exist\n", filename);
+    exit(1);
+  }
+
   for(i = 0; i < ngalaxies; i++){
     char line[1024];
     double Pos[3];
@@ -617,7 +674,7 @@ GalaxyCatalog *read_galaxies_from_file(char *filename, int ngalaxies, int file_f
   fclose(fp);
 
   // The mean weight and RMS
-  if(mpi_rank == 0 && cute_library_verbose)
+  if(mpi_rank == 0 && cuter_library_verbose)
     printf("Mean weight: %lf  RMS: %lf\n", sum_w/(double)ngalaxies, sqrt(sum_w2/(double)ngalaxies));
   cat->sum_w = sum_w;
   cat->sum_w2 = sum_w2;
@@ -695,7 +752,7 @@ void compute_boxsize_shift_positions(GalaxyCatalog *cat, GalaxyCatalog *cat2, do
   max_z = max_z-min_z;
 
   // The min/max positions (separations)
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Shifting particles and computing boxsize:\n");
     printf("====================================\n");
@@ -706,7 +763,7 @@ void compute_boxsize_shift_positions(GalaxyCatalog *cat, GalaxyCatalog *cat2, do
 
   // The largest displacement in either direction
   *box = 1.01 * MAX(max_x, MAX(max_y, max_z));
-  if(mpi_rank == 0 && cute_library_verbose)
+  if(mpi_rank == 0 && cuter_library_verbose)
     printf("The boxsize we will use is %5.2lf Mpc/h\n", *box);
 }
 
@@ -738,7 +795,7 @@ Grid *create_grid(int ngalaxies, double rmax, double box){
   grid->cell_size = box/(double) ngrid;
   grid->allocated = 1;
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n"); 
     printf("Creating new grid\n"); 
     printf("====================================\n"); 
@@ -763,6 +820,10 @@ Grid *create_grid(int ngalaxies, double rmax, double box){
 int count_lines_in_file(char *filename){
   int n = 0;
   FILE *fp = fopen(filename, "r");
+  if(fp == NULL){
+    printf("Error in count_lines_in_file. File [ %s ] does not exist. Return 0\n", filename);
+    return 0;
+  }
   while(!feof(fp)){
     char ch = fgetc(fp);
     if(ch == '\n') n++;
@@ -841,7 +902,7 @@ void add_galaxies_to_cells(Grid *grid, GalaxyCatalog *cat){
     if(cells[i].np == 0) nempty += 1;
   }
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Adding galaxies to grid\n");
     printf("====================================\n");
@@ -910,12 +971,14 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
 
   // Fetch data from the binning
   int nbins      = pc->nbins;
+  double rmin    = pc->rmin;
   double rmax    = pc->rmax;
   double *XY     = pc->paircount;
 
   // Other variables
   double pairs_dist2 = 0.0, pairs_dist = 0.0;
-  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax;
+  double nbins_over_rmax = nbins / rmax, rmax2 = rmax * rmax, rmin2 = rmin * rmin;
+  double nbins_over_logrmaxrmin = nbins / log(rmax/rmin);
   int i;
 
   // Initialize OpenMP
@@ -939,7 +1002,7 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
     }
   }
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Cross pair counts using grid:\n");
     printf("====================================\n");
@@ -948,7 +1011,7 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
 
   // How many cells in each direction we must search in the second grid
   int delta_ncells2 = (int)(ceil(rmax / cell_size2)) + 2;
-  if(mpi_rank == 0 && cute_library_verbose)
+  if(mpi_rank == 0 && cuter_library_verbose)
     printf("We will go left and right: [%i] cells. The corresponding distance: +/-[%lf] Mpc/h\n", 
         delta_ncells2,  delta_ncells2 * cell_size2);
 
@@ -1080,11 +1143,16 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
                   double dist2 = pow2(dx)+pow2(dy)+pow2(dz);
 
                   // Add to bin
-                  if(dist2 < rmax2){
+                  if(dist2 < rmax2 && dist2 > rmin2){
                     double dist = sqrt(dist2);
 
                     // The index in the binning
-                    int ibin = (int) (dist * nbins_over_rmax);
+                    int ibin;
+                    if(cuter_library_logbin){
+                      ibin = (int) (log(dist/rmin) * nbins_over_logrmaxrmin);
+                    } else {
+                      ibin = (int) ((dist-rmin) * nbins_over_rmax);
+                    }
 
 #ifdef WEIGHTS
                     XY_threads[id][ibin] += curpart_cell->w * curpart_neighbor_cell->w;
@@ -1095,7 +1163,7 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
                     // Total number of pairs we have computed distances for
                     pairs_dist += 1.0;
                   }
-                  
+
                   // Total number of pairs we have computed square distances for
                   pairs_dist2 += 1.0;
                 }
@@ -1105,12 +1173,12 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
         }
       }
     }
-    
+
     // Show progress...
 #if defined(USE_OMP)
 #pragma omp critical
     {
-      if(cute_library_verbose) printf("Processed (%4i / %4i)   (ThreadID: %3i)\n", num_processed, max_ix, id);
+      if(cuter_library_verbose) printf("Processed (%4i / %4i)   (ThreadID: %3i)\n", num_processed, max_ix, id);
       num_processed++;
     }
 #endif
@@ -1137,7 +1205,7 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
 
   // Show timing and how many dist^2 and square roots we had to compute
   diff = clock() - start;
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("We have computed dist^2 for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist2, 
         (double)ngalaxies * (double)ngalaxies2, pairs_dist2/((double)ngalaxies*(double) ngalaxies2) * 100.0);
     printf("We have computed sqrt(dist^2) for [%.0lf] pairs out of [%.0lf]. That is %lf%%\n", pairs_dist, 
@@ -1152,11 +1220,12 @@ void grid_cross_pair_counting(Grid *grid, Grid *grid2, PairCountBinning *pc, dou
 void compute_correlation_function(PairCountBinning *DD, char *filename, double box){
   // Fetch data from binning
   int nbins      = DD->nbins;
+  double rmin    = DD->rmin;
   double rmax    = DD->rmax;
   double norm_DD = DD->norm;
   int i;
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Correlation function:\n");
     printf("====================================\n");
@@ -1164,20 +1233,24 @@ void compute_correlation_function(PairCountBinning *DD, char *filename, double b
   }
 
   FILE *fp;
-  if(mpi_rank == 0)
+  if(mpi_rank == 0){
     fp = fopen(filename, "w");
-  
+    if(fp == NULL){
+      printf("Error in compute_correlation_function. Cannot open file [ %s ]. Will print to screen\n", filename);
+    }
+  }
+
   double rho_avg = norm_DD / pow3(box);
 
   for(i = 0; i < nbins; i++){
     // Left edge of bin
-    double r  = rmax / (double) nbins * i;
-      
+    double r = r_binning(i+0.0, nbins, rmin, rmax);
+
     // Right edge of bin
-    double r1  = rmax / (double) nbins * (i+1);
+    double r1 = r_binning(i+1.0, nbins, rmin, rmax);
 
     // Center of bin
-    double rbin  = rmax / (double) nbins * (i+0.5);
+    double rbin = r_binning(i+0.5, nbins, rmin, rmax);
 
     // Compute correlation function with Poisson errors
     double corr = 0.0, err_corr = 0.0;
@@ -1193,9 +1266,15 @@ void compute_correlation_function(PairCountBinning *DD, char *filename, double b
     // Output to file
     if(mpi_rank == 0){
 #ifdef WEIGHTS
-      fprintf(fp,"%le %le %le %le\n",  rbin, corr, err_corr, DD->paircount[i]);
+      if(fp != NULL) 
+        fprintf(fp,"%le %le %le %le\n",  rbin, corr, err_corr, DD->paircount[i]);
+      else
+        printf("%le %le %le %le\n",  rbin, corr, err_corr, DD->paircount[i]);
 #else
-      fprintf(fp,"%le %le %le %d\n",  rbin, corr, err_corr, (int)DD->paircount[i]);
+      if(fp != NULL) 
+        fprintf(fp,"%le %le %le %d\n",  rbin, corr, err_corr, (int)DD->paircount[i]);
+      else  
+        printf("%le %le %le %le\n",  rbin, corr, err_corr, DD->paircount[i]);
 #endif
     }
   }
@@ -1209,13 +1288,14 @@ void compute_correlation_function(PairCountBinning *DD, char *filename, double b
 void compute_correlation_function_lz(PairCountBinning *DD, PairCountBinning *DR, PairCountBinning *RR, char *filename){
   // Fetch data from binning
   int nbins      = DD->nbins;
+  double rmin    = DD->rmin;
   double rmax    = DD->rmax;
   double norm_DD = DD->norm;
   double norm_DR = DR->norm;
   double norm_RR = RR->norm;
   int i;
 
-  if(mpi_rank == 0 && cute_library_verbose){
+  if(mpi_rank == 0 && cuter_library_verbose){
     printf("\n====================================\n");
     printf("Correlation function using LS estimator:\n");
     printf("====================================\n");
@@ -1223,12 +1303,16 @@ void compute_correlation_function_lz(PairCountBinning *DD, PairCountBinning *DR,
   }
 
   FILE *fp;
-  if(mpi_rank == 0)
+  if(mpi_rank == 0){
     fp = fopen(filename, "w");
-  
+    if(fp == NULL){
+      printf("Error in compute_correlation_function. Cannot open file [ %s ]. Will print to screen\n", filename);
+    }
+  }
+
   for(i = 0; i < nbins; i++){
     // Center of bin
-    double r = rmax / (double) nbins * (i+0.5);
+    double r = r_binning(i+0.0, nbins, rmin, rmax);
 
     // Compute correlation function with Poisson errors
     double corr = 0.0, err_corr = 0.0;
@@ -1249,9 +1333,15 @@ void compute_correlation_function_lz(PairCountBinning *DD, PairCountBinning *DR,
     // Output to file
     if(mpi_rank == 0){
 #ifdef WEIGHTS
-      fprintf(fp,"%le  %le  %le  %le  %le  %le\n", r, corr, err_corr, DD->paircount[i], DR->paircount[i], RR->paircount[i]);
+      if(fp != NULL) 
+        fprintf(fp,"%le  %le  %le  %le  %le  %le\n", r, corr, err_corr, DD->paircount[i], DR->paircount[i], RR->paircount[i]);
+      else  
+        printf("%le  %le  %le  %le  %le  %le\n", r, corr, err_corr, DD->paircount[i], DR->paircount[i], RR->paircount[i]);
 #else
-      fprintf(fp,"%le  %le  %le  %d   %d   %d\n",  r, corr, err_corr, (int)DD->paircount[i], (int)DR->paircount[i], (int)RR->paircount[i]);
+      if(fp != NULL) 
+        fprintf(fp,"%le  %le  %le  %d   %d   %d\n",  r, corr, err_corr, (int)DD->paircount[i], (int)DR->paircount[i], (int)RR->paircount[i]);
+      else  
+        printf("%le  %le  %le  %d   %d   %d\n",  r, corr, err_corr, (int)DD->paircount[i], (int)DR->paircount[i], (int)RR->paircount[i]);
 #endif
     }
   }
@@ -1262,10 +1352,11 @@ void compute_correlation_function_lz(PairCountBinning *DD, PairCountBinning *DR,
 //====================================================
 // Allocate memory for a binning
 //====================================================
-PairCountBinning *create_binning(int nbins, double rmax){
+PairCountBinning *create_binning(int nbins, double rmin, double rmax){
   PairCountBinning *pc = (PairCountBinning *) malloc(sizeof(PairCountBinning));
   pc->paircount = (double *) malloc(sizeof(double) * nbins);
   pc->nbins = nbins;
+  pc->rmin  = rmin;
   pc->rmax  = rmax;
   pc->norm  = 1.0;
   pc->allocated = 1;
@@ -1275,9 +1366,10 @@ PairCountBinning *create_binning(int nbins, double rmax){
 //====================================================
 // Allocate memory for a binning
 //====================================================
-BinnedCorrelationFunction* create_binning_correlation_function(int nbins, double rmax, double *DD, double *DR, double *RR, double *corr_func, double *err_corr){
+BinnedCorrelationFunction* create_binning_correlation_function(int nbins, double rmin, double rmax, double *DD, double *DR, double *RR, double *corr_func, double *err_corr){
   BinnedCorrelationFunction *tmp = (BinnedCorrelationFunction *) malloc(sizeof(BinnedCorrelationFunction));
   tmp->nbins = nbins;
+  tmp->rmin  = rmin;
   tmp->rmax  = rmax;
   tmp->r     = (double *) malloc(sizeof(double)*nbins);
   tmp->DD    = (double *) malloc(sizeof(double)*nbins);
@@ -1288,7 +1380,7 @@ BinnedCorrelationFunction* create_binning_correlation_function(int nbins, double
   tmp->allocated = 1;
   int i;
   for(i = 0; i < nbins; i++){
-    tmp->r[i] = rmax / (double) nbins * (i+0.5);
+    tmp->r[i] = r_binning(i+0.5, nbins, rmin, rmax);
     if(DD != NULL)   tmp->DD[i] = DD[i];
     if(DR != NULL)   tmp->DR[i] = DR[i];
     if(RR != NULL)   tmp->RR[i] = RR[i];
@@ -1437,6 +1529,7 @@ GSL_Spline* create_rofz_spline(double OmegaM){
 // Take a list of galaxies and copy this into a galaxy catalog
 //====================================================
 GalaxyCatalog *create_galaxy_catalog_from_galaxies_copy(Galaxy *galaxies, int ngalaxies){
+  // Allocate particle array
   GalaxyCatalog *cat = (GalaxyCatalog *) malloc(sizeof(GalaxyCatalog));
   cat->galaxies = (Galaxy *) malloc(sizeof(Galaxy)*ngalaxies);
   Galaxy *allgalaxies = cat->galaxies;
@@ -1458,8 +1551,8 @@ GalaxyCatalog *create_galaxy_catalog_from_galaxies_copy(Galaxy *galaxies, int ng
   }
 
   // The mean weight and RMS
-  if(mpi_rank == 0 && cute_library_verbose)
-    printf("Create galaxy catalog from %i galaxies. Mean weight: %lf  RMS: %lf\n", ngalaxies, sum_w/(double)ngalaxies, sqrt(sum_w2/(double)ngalaxies));
+  if(mpi_rank == 0 && cuter_library_verbose)
+    printf("Create galaxy catalog from galaxies. Mean weight: %lf  RMS: %lf\n", sum_w/(double)ngalaxies, sqrt(sum_w2/(double)ngalaxies));
   cat->sum_w = sum_w;
   cat->sum_w2 = sum_w2;
   return cat;
@@ -1469,6 +1562,7 @@ GalaxyCatalog *create_galaxy_catalog_from_galaxies_copy(Galaxy *galaxies, int ng
 // Take a list of galaxies and assign this to a galaxy catalog
 //====================================================
 GalaxyCatalog *create_galaxy_catalog_from_galaxies(Galaxy *galaxies, int ngalaxies){
+  // Allocate particle array
   GalaxyCatalog *cat = (GalaxyCatalog *) malloc(sizeof(GalaxyCatalog));
   cat->galaxies = galaxies;
   cat->ngalaxies = ngalaxies;
@@ -1485,8 +1579,8 @@ GalaxyCatalog *create_galaxy_catalog_from_galaxies(Galaxy *galaxies, int ngalaxi
   }
 
   // The mean weight and RMS
-  if(mpi_rank == 0 && cute_library_verbose)
-    printf("Create galaxy catalog from %i galaxies. Mean weight: %lf  RMS: %lf\n", ngalaxies, sum_w/(double)ngalaxies, sqrt(sum_w2/(double)ngalaxies));
+  if(mpi_rank == 0 && cuter_library_verbose)
+    printf("Create galaxy catalog from galaxies. Mean weight: %lf  RMS: %lf\n", sum_w/(double)ngalaxies, sqrt(sum_w2/(double)ngalaxies));
   cat->sum_w = sum_w;
   cat->sum_w2 = sum_w2;
   return cat;
@@ -1495,15 +1589,24 @@ GalaxyCatalog *create_galaxy_catalog_from_galaxies(Galaxy *galaxies, int ngalaxi
 //====================================================
 // Compute correlation function from a given galaxy catalog
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(GalaxyCatalog *galaxy_cat, int nbins, double rmax, double box){
+BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(GalaxyCatalog *galaxy_cat, int nbins, double rmin, double rmax, double box){
 #ifdef USE_MPI
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 #endif
+  
+  if(cuter_library_logbin && rmin <= 0.0) {
+    printf("Error: CUTER called with cuter_library_logbin = 1 and rmin = %lf <= 0.0\n", rmin);
+    return NULL;
+  } else if (rmin < 0.0){
+    printf("Error: CUTER called with rmin = %lf < 0.0\n", rmin);
+    return NULL;
+  }
+
   int ngalaxies = galaxy_cat->ngalaxies;
   Grid *galaxy_grid = create_grid(ngalaxies, rmax, box);
   add_galaxies_to_cells(galaxy_grid, galaxy_cat);
-  PairCountBinning *DD = create_binning(nbins, rmax);
+  PairCountBinning *DD = create_binning(nbins, rmin, rmax);
   DD->norm = galaxy_cat->sum_w;
 #ifdef BRUTEFORCE
   brute_force_pair_counting(galaxy_cat, DD, box);
@@ -1515,9 +1618,9 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(Gala
   double *err_corr  = (double *) malloc(sizeof(double)*nbins);
   double norm_DD = DD->norm, rho_avg = norm_DD / pow3(box);
   for(i = 0; i < nbins; i++){
-    double rleft  = rmax / (double) nbins * i;
-    double rbin   = rmax / (double) nbins * (i+0.5);
-    double rright = rmax / (double) nbins * (i+1);
+    double rleft  = r_binning(i+0.0, nbins, rmin, rmax);
+    double rbin   = r_binning(i+0.5, nbins, rmin, rmax);
+    double rright = r_binning(i+1.0, nbins, rmin, rmax);
     corr_func[i] = err_corr[i] = 0.0;
     if(DD->paircount[i] != 0.0){
       double one_over_sqrtDD = 1.0/sqrt(DD->paircount[i]);
@@ -1529,7 +1632,7 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(Gala
   }
 
   BinnedCorrelationFunction *corr_binning = create_binning_correlation_function(
-      nbins, rmax, DD->paircount, NULL, NULL, corr_func, err_corr);
+      nbins, rmin, rmax, DD->paircount, NULL, NULL, corr_func, err_corr);
 
   free_grid(galaxy_grid);
   free(corr_func);
@@ -1542,10 +1645,10 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(Gala
 //====================================================
 // Compute correlation function from an array of galaxies
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_galaxies(Galaxy *galaxies, int ngalaxies, int nbins, double rmax, double box){
+BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_galaxies(Galaxy *galaxies, int ngalaxies, int nbins, double rmin, double rmax, double box){
   GalaxyCatalog *galaxy_cat = create_galaxy_catalog_from_galaxies(galaxies, ngalaxies);
 
-  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_periodic_from_catalog(galaxy_cat, nbins, rmax, box);
+  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_periodic_from_catalog(galaxy_cat, nbins, rmin, rmax, box);
   
   free(galaxy_cat);
   return corr_binning;
@@ -1554,13 +1657,13 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_galaxies(Gal
 //====================================================
 // Compute correction function from data in a file
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_periodic(char *filename_galaxies, int nbins, double rmax, double box){
+BinnedCorrelationFunction *CUTER_correlation_function_periodic(char *filename_galaxies, int nbins, double rmin, double rmax, double box){
   int file_format = FILEFORMAT_PHYSICAL_POSITIONS;
   int ngalaxies = count_lines_in_file(filename_galaxies);
   
   GalaxyCatalog *galaxy_cat = read_galaxies_from_file(filename_galaxies, ngalaxies, file_format);
   
-  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_periodic_from_catalog(galaxy_cat, nbins, rmax, box);
+  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_periodic_from_catalog(galaxy_cat, nbins, rmin, rmax, box);
   
   free_cat(galaxy_cat);
   return corr_binning;
@@ -1569,12 +1672,20 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic(char *filename_ga
 //====================================================
 // Compute correction function from a galaxy catalog
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog *galaxy_cat, GalaxyCatalog *random_cat, int nbins, double rmax, double OmegaM){
+BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog *galaxy_cat, GalaxyCatalog *random_cat, int nbins, double rmin, double rmax, double OmegaM){
 #ifdef USE_MPI
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 #endif
   
+  if(cuter_library_logbin && rmin <= 0.0) {
+    printf("Error: CUTER called with cuter_library_logbin = 1 and rmin = %lf <= 0.0\n", rmin);
+    return NULL;
+  } else if (rmin < 0.0){
+    printf("Error: CUTER called with rmin = %lf < 0.0\n", rmin);
+    return NULL;
+  }
+
   int ngalaxies = galaxy_cat->ngalaxies;
   int nrandom   = random_cat->ngalaxies;
 
@@ -1586,9 +1697,9 @@ BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog
   add_galaxies_to_cells(galaxy_grid, galaxy_cat);
   add_galaxies_to_cells(random_grid, random_cat);
   
-  PairCountBinning *DD = create_binning(nbins, rmax);
-  PairCountBinning *DR = create_binning(nbins, rmax);
-  PairCountBinning *RR = create_binning(nbins, rmax);
+  PairCountBinning *DD = create_binning(nbins, rmin, rmax);
+  PairCountBinning *DR = create_binning(nbins, rmin, rmax);
+  PairCountBinning *RR = create_binning(nbins, rmin, rmax);
   
   DD->norm = 0.5*(pow2(galaxy_cat->sum_w) - galaxy_cat->sum_w2);
   RR->norm = 0.5*(pow2(random_cat->sum_w) - random_cat->sum_w2);
@@ -1609,7 +1720,7 @@ BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog
   double norm_DR = DR->norm;
   double norm_RR = RR->norm;
   for(i = 0; i < nbins; i++){
-    double r = rmax / (double) nbins * (i+0.5);
+    double r = r_binning(i+0.5, nbins, rmin, rmax);
     corr_func[i] = err_corr[i] = 0.0;
     if(DD->paircount[i] != 0.0){
       double one_over_sqrtDD = 1.0/sqrt(DD->paircount[i]);
@@ -1624,7 +1735,7 @@ BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog
   }
 
   BinnedCorrelationFunction *corr_binning = create_binning_correlation_function(
-      nbins, rmax, DD->paircount, DR->paircount, RR->paircount, corr_func, err_corr);
+      nbins, rmin, rmax, DD->paircount, DR->paircount, RR->paircount, corr_func, err_corr);
 
   free_grid(galaxy_grid);
   free_grid(random_grid);
@@ -1639,7 +1750,7 @@ BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(GalaxyCatalog
 //====================================================
 // Compute correction function from data in files
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function(char *filename_galaxies, char* filename_random, int file_format, int nbins, double rmax, double OmegaM){
+BinnedCorrelationFunction *CUTER_correlation_function(char *filename_galaxies, char* filename_random, int file_format, int nbins, double rmin, double rmax, double OmegaM){
   global_spline_rofz = create_rofz_spline(OmegaM); 
   
   int ngalaxies = count_lines_in_file(filename_galaxies);
@@ -1648,7 +1759,7 @@ BinnedCorrelationFunction *CUTER_correlation_function(char *filename_galaxies, c
   GalaxyCatalog *galaxy_cat = read_galaxies_from_file(filename_galaxies, ngalaxies, file_format);
   GalaxyCatalog *random_cat = read_galaxies_from_file(filename_random, nrandom, file_format);
 
-  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmax, OmegaM);
+  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmin, rmax, OmegaM);
   
   free_cat(galaxy_cat);
   free_cat(random_cat);
@@ -1660,13 +1771,13 @@ BinnedCorrelationFunction *CUTER_correlation_function(char *filename_galaxies, c
 // Compute correction function from an array of galaxies
 // NB: this modifies the Galaxy positions by shifting them!
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies(Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmax, double OmegaM){
+BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies(Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmin, double rmax, double OmegaM){
   global_spline_rofz = create_rofz_spline(OmegaM); 
   
   GalaxyCatalog *galaxy_cat = create_galaxy_catalog_from_galaxies(galaxies, ngalaxies);
   GalaxyCatalog *random_cat = create_galaxy_catalog_from_galaxies(random,   nrandom);
   
-  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmax, OmegaM);
+  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmin, rmax, OmegaM);
   
   free(galaxy_cat);
   free(random_cat);
@@ -1676,13 +1787,13 @@ BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies(Galaxy *gala
 //====================================================
 // Compute correction function from an array of galaxies
 //====================================================
-BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies_copy(Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmax, double OmegaM){
+BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies_copy(Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmin, double rmax, double OmegaM){
   global_spline_rofz = create_rofz_spline(OmegaM); 
-  
+ 
   GalaxyCatalog *galaxy_cat = create_galaxy_catalog_from_galaxies_copy(galaxies, ngalaxies);
   GalaxyCatalog *random_cat = create_galaxy_catalog_from_galaxies_copy(random,   nrandom);
   
-  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmax, OmegaM);
+  BinnedCorrelationFunction *corr_binning = CUTER_correlation_function_from_catalog(galaxy_cat, random_cat, nbins, rmin, rmax, OmegaM);
   
   free_cat(galaxy_cat);
   free_cat(random_cat);

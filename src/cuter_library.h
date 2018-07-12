@@ -47,7 +47,8 @@
 
 extern int mpi_rank;
 extern int mpi_size;
-extern int cute_library_verbose;
+extern int cuter_library_verbose;
+extern int cuter_library_logbin;
 
 //====================================================
 // This is a single grid-cell
@@ -74,6 +75,7 @@ typedef struct Grid{
 //====================================================
 typedef struct PairCountBinning{
   int nbins;             // Number of linear bins between r=0 and r=RMAX
+  double rmin;           // The RMIN we bin down to
   double rmax;           // The RMAX we bin up to
   double norm;           // Normalization of paircount: (weighted) total number of pairs
   double *paircount;     // The paircounts
@@ -85,6 +87,7 @@ typedef struct PairCountBinning{
 //====================================================
 typedef struct BinnedCorrelationFunction{
   int nbins;             // Number of linear bins between r=0 and r=RMAX
+  double rmin;           // The RMIN we bin down to
   double rmax;           // The RMAX we bin up to
   double *r;             // The r of the bin
   double *DD;            // The paircounts
@@ -109,7 +112,7 @@ GalaxyCatalog *create_galaxy_catalog_from_galaxies(Galaxy *galaxies, int ngalaxi
 GalaxyCatalog *create_galaxy_catalog_from_galaxies_copy(Galaxy *galaxies, int ngalaxies);
 
 Grid *create_grid(int ngalaxies, double rmax, double box);
-PairCountBinning *create_binning(int nbins, double rmax);
+PairCountBinning *create_binning(int nbins, double rmin, double rmax);
 GSL_Spline *create_rofz_spline(double OmegaM);
 
 double r_of_z(double z);
@@ -133,17 +136,19 @@ void free_binning(PairCountBinning *pc);
 void free_binned_correlation_function(BinnedCorrelationFunction *bcf);
 
 BinnedCorrelationFunction* create_binning_correlation_function(
-    int nbins, double rmax, double *DD, double *DR, double *RR, double *corr, double *err_corr);
+    int nbins, double rmin, double rmax, double *DD, double *DR, double *RR, double *corr, double *err_corr);
+
+double r_binning(double ibin, int nbins, double rmin, double rmax);
 
 //=========================================================
 // Methods for periodic box
 //=========================================================
 BinnedCorrelationFunction *CUTER_correlation_function_periodic(
-    char *filename_galaxies, int nbins, double rmax, double box);
+    char *filename_galaxies, int nbins, double rmin, double rmax, double box);
 BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_catalog(
-    GalaxyCatalog *galaxy_cat, int nbins, double rmax, double box);
+    GalaxyCatalog *galaxy_cat, int nbins, double rmin, double rmax, double box);
 BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_galaxies(
-    Galaxy *galaxies, int ngalaxies, int nbins, double rmax, double box);
+    Galaxy *galaxies, int ngalaxies, int nbins, double rmin, double rmax, double box);
 
 //=========================================================
 // Methods for survey data (LZ estimator)
@@ -151,12 +156,19 @@ BinnedCorrelationFunction *CUTER_correlation_function_periodic_from_galaxies(
 // Use the _copy method to avoid changing them
 //=========================================================
 BinnedCorrelationFunction *CUTER_correlation_function(
-    char *filename_galaxies, char* filename_random, int file_format, int nbins, double rmax, double OmegaM);
+    char *filename_galaxies, char* filename_random, int file_format, int nbins, double rmin, double rmax, double OmegaM);
 BinnedCorrelationFunction *CUTER_correlation_function_from_catalog(
-    GalaxyCatalog *galaxy_cat, GalaxyCatalog *random_cat, int nbins, double rmax, double OmegaM);
+    GalaxyCatalog *galaxy_cat, GalaxyCatalog *random_cat, int nbins, double rmin, double rmax, double OmegaM);
 BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies(
-    Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmax, double OmegaM);
+    Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmin, double rmax, double OmegaM);
 BinnedCorrelationFunction *CUTER_correlation_function_from_galaxies_copy(
-    Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmax, double OmegaM);
+    Galaxy *galaxies, Galaxy *random, int ngalaxies, int nrandom, int nbins, double rmin, double rmax, double OmegaM);
+
+//=========================================================
+// Set binning and verbose options externally
+//=========================================================
+void CUTER_set_bintype_log();
+void CUTER_set_bintype_lin();
+void CUTER_set_verbose(int verbose);
 
 #endif

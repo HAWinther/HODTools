@@ -123,6 +123,9 @@ void simplex_search(std::vector<double> &start, std::vector<double> dx, Evaluati
           std::cout << "4.5 Param: ["; for(int j = 0; j < npar; j++) { std::cout << " " << std::setw(12) << simplex[j][i];} std::cout << "] Chi2: " << std::setw(12) << chi2[i] << "\n";
         }
       }
+    } else {
+      std::cout << "Error in simplex_search. We are stuck! Change initial-value and/or step-size and run again\n";
+      exit(1);
     }
     // Break statement:
     bool converged = false;

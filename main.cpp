@@ -20,11 +20,12 @@ const double rmin_corr_chisquared_comp = 0.5;
 const double rmax_corr_chisquared_comp = 100.0;
 
 // Parameters for computation of correlation function
-const double rmax_global = 100.0;
-const int    nbins_global = 20;
+const double rmin_global =  0.1;
+const double rmax_global = 80.0;
+const int    nbins_global = 60;
 
 // Parameters for simplex-search or mcmc search
-double chi2_convergence_criterion = 0.01;
+double chi2_convergence_criterion = 0.001;
 int nstep_max = 1000;
 
 // Global variables: boxsize of simulations, the halo-catalog and zeta(r) for fiducial model
@@ -38,7 +39,6 @@ BinnedCorrelationFunction *bcf_fiducial;
 // Evaluate this relative to the reference and return the
 // chi-squared value. This is used in simplex or MCMC search
 //===========================================================
-int jalla = 0;
 double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
  
 #ifdef TESTING
@@ -56,6 +56,7 @@ double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
 #endif
 
   const int nbins   = nbins_global;
+  const double rmin = rmin_global;
   const double rmax = rmax_global;
   const double box  = box_global;
 
@@ -72,8 +73,8 @@ double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
   generateMock(halos_global, mock, hod, box);
 
   // Compute chi(r) of mock
-  BinnedCorrelationFunction *bcf = CUTER_correlation_function_periodic_from_galaxies(&mock[0], mock.size(), nbins, rmax, box);
-
+  BinnedCorrelationFunction *bcf = CUTER_correlation_function_periodic_from_galaxies(&mock[0], mock.size(), nbins, rmin, rmax, box);
+  
   // Compute chi2
   double chi2 = 0.0;
   int np = 0;
@@ -86,10 +87,12 @@ double create_mock_compute_2pcf_return_chi2(std::vector<double> &param){
   free_binned_correlation_function(bcf);
 
   // For MCMC we need to divide this by pow2(0.01) or something to make sure we don't accept every step
-  return chi2;
+  return chi2 / pow2(0.01) / double(np);
 }
 
 int main(int argc, char** argv){
+  CUTER_set_bintype_log();
+  CUTER_set_verbose( int(false) );
 
 #ifdef USE_MPI
   MPI_Init(&argc, &argv);
@@ -150,8 +153,8 @@ int main(int argc, char** argv){
       std::cout << "Boxsize                  : [ " << box_global               << " ] Mpc/h\n";
       std::cout << "Filename Fiducial Output : [ " << filename_output_fiducial << " ]\n";
       std::cout << "Filename Output          : [ " << filename_output          << " ]\n";
-      if(do_matching == 1) std::cout << "Will match using simplex search\n\n";
-      else std::cout << "Will match using mcmc search\n\n";
+      if(do_matching == 1) std::cout << "Will match using simplex search\n";
+      else std::cout << "Will match using mcmc search\n";
     }
     std::cout << "\n";
   }
@@ -179,7 +182,7 @@ int main(int argc, char** argv){
   if(do_matching == 0) return 1;
 
   // Compute correlation function for the fiducial mock needed for th matching
-  bcf_fiducial = CUTER_correlation_function_periodic_from_galaxies(&mock_fiducial[0], mock_fiducial.size(), nbins_global, rmax_global, box_fiducial);
+  bcf_fiducial = CUTER_correlation_function_periodic_from_galaxies(&mock_fiducial[0], mock_fiducial.size(), nbins_global, rmin_global, rmax_global, box_fiducial);
 
   // Read in halo-catalog for which we are to match to the fiducial one
   readRockstarHalos(filename_halo, halos_global);
@@ -189,14 +192,14 @@ int main(int argc, char** argv){
   if(do_matching == 1){
     // Perform simplex-search
     Evaluation_function eval_func = create_mock_compute_2pcf_return_chi2;
-    param     = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.01); // Initial guess
-    step_size = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.01); // Step-size
+    param     = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.001); // Initial guess
+    step_size = std::vector<double>(hod_fiducial.get_num_hod_param(), 0.1); // Step-size
     simplex_search(param, step_size, eval_func, chi2_convergence_criterion, nstep_max);
   } else {
     // Perform mcmc-search
     Evaluation_function eval_func = create_mock_compute_2pcf_return_chi2;
-    param     = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.01);   // Initial guess
-    step_size = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.0001); // Step-size
+    param     = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.001);   // Initial guess
+    step_size = std::vector<double> (hod_fiducial.get_num_hod_param(), 0.001); // Step-size
     mcmc_search(param, step_size, eval_func, chi2_convergence_criterion, nstep_max);
   }
 
@@ -204,6 +207,9 @@ int main(int argc, char** argv){
   HodModel hod;
   hod.simplex_param_conversion(param);
  
+  // Output best fit parameters
+  hod.print();
+
   // Generate mock
   std::vector<Galaxy> mock;
   generator.seed(STANDARD_SEED);

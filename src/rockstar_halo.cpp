@@ -70,5 +70,5 @@ void readRockstarHalos(std::string filename, std::vector<Halo> &halos){
   clock_t end = clock();
   double time = (double) (end-start) / CLOCKS_PER_SEC;
   std::cout << "readRockstarHalos done. Time: " << time << " sec" << std::endl; 
-  std::cout << "====================================================\n\n";
+  std::cout << "====================================================\n";
 }

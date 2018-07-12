@@ -22,7 +22,7 @@ EXEC = HODMatch
 CC = g++-mp-6 -std=c++11 -O3
 OPTIONS = -DPERIODIC -DVELOCITY
 ifdef USE_MPI
-CC = mpicc-openmpi-gcc6
+CC = mpicxx-openmpi-gcc6
 OPTIONS += -DUSE_MPI
 EXEC = HODMatch_MPI
 endif
@@ -40,15 +40,17 @@ LIB = -L/opt/local/lib/ -lgsl -lm
 #====================================
 # OBJECT FILES
 #====================================
-OBJS = src/simplex.o src/random_methods.o src/gsl_spline_wrapper.o src/cuter_library.o src/simplex.o src/hod.o src/rockstar_halo.o main.o
+OBJS = src/random_methods.o src/gsl_spline_wrapper.o src/cuter_library.o src/simplex.o src/hod.o src/rockstar_halo.o main.o
 
-$(EXEC): $(OBJS)
+HEADERS = src/random_methods.h src/gsl_spline_wrapper.h src/cuter_library.h src/simplex.h src/hod.h src/rockstar_halo.h 
+
+$(EXEC): $(OBJS) $(HEADERS)
 	${CC} -o $@ $^ $C $(INC) $(LIB)
 
-%.o: %.cpp
+%.o: %.cpp $(HEADERS)
 	${CC} -c -o $@ $< $C $(INC)
 
-%.o: %.c
+%.o: %.c $(HEADERS)
 	${CC} -c -o $@ $< $C $(INC)
 
 clean:
